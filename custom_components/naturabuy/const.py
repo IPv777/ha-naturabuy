@@ -14,6 +14,7 @@ CONF_SELLER_TYPE = "seller_type"
 CONF_BRAND = "brand"
 CONF_KEYWORDS_EXCLUDE = "keywords_exclude"
 CONF_KEYWORDS_INCLUDE = "keywords_include"
+CONF_DEPARTMENT = "department"
 CONF_MAX_PAGES = "max_pages"
 CONF_TURBO_MODE = "turbo_mode"
 CONF_NOTIFY_NEW = "notify_new"
@@ -49,7 +50,8 @@ DEFAULT_NO_RESERVE = False
 DEFAULT_CONDITION = CONDITION_ALL
 DEFAULT_SELLER_TYPE = SELLER_ALL
 DEFAULT_BRAND = ""
-DEFAULT_KEYWORDS_EXCLUDE = "crosse seule, canon seul, boitier seul, chargeur seul, rail seul, embases"
+DEFAULT_DEPARTMENT = ""
+DEFAULT_KEYWORDS_EXCLUDE = "crosse seule, canon seul, boitier seul, chargeur seul, chargeur, rail seul, embases, douilles, etuis, ogives, amorces, moderateur, silencieux"
 DEFAULT_KEYWORDS_INCLUDE = ""
 DEFAULT_MAX_PAGES = 1
 DEFAULT_TURBO_MODE = True
@@ -62,13 +64,17 @@ TURBO_SCAN_INTERVAL = 2    # in minutes during final 30 min of an auction
 # Services and events
 SERVICE_REFRESH = "refresh"
 SERVICE_RESET_CACHE = "reset_cache"
+SERVICE_MUTE_ITEM = "mute_item"
+SERVICE_UNMUTE_ITEM = "unmute_item"
 EVENT_NEW_LISTING = "naturabuy_new_listing"
 EVENT_AUCTION_ENDING_SOON = "naturabuy_auction_ending_soon"
 EVENT_AUCTION_OUTBID = "naturabuy_auction_outbid"
 EVENT_AUCTION_BUDGET_EXCEEDED = "naturabuy_auction_budget_exceeded"
+EVENT_AUCTION_EXTENDED = "naturabuy_auction_extended"
 
 # Actionable notification actions
 ACTION_REFRESH = "NATURABUY_REFRESH"
+ACTION_MUTE = "NATURABUY_MUTE"
 
 # HTTP User-Agent & realistic browser headers
 DEFAULT_USER_AGENT = (

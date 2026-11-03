@@ -18,6 +18,7 @@ from .const import (
     CONF_ALERT_MINUTES,
     CONF_BRAND,
     CONF_CONDITION,
+    CONF_DEPARTMENT,
     CONF_KEYWORDS_EXCLUDE,
     CONF_KEYWORDS_INCLUDE,
     CONF_MAX_PAGES,
@@ -36,6 +37,7 @@ from .const import (
     DEFAULT_ALERT_MINUTES,
     DEFAULT_BRAND,
     DEFAULT_CONDITION,
+    DEFAULT_DEPARTMENT,
     DEFAULT_KEYWORDS_EXCLUDE,
     DEFAULT_KEYWORDS_INCLUDE,
     DEFAULT_MAX_PAGES,
@@ -131,6 +133,7 @@ class NaturaBuyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ),
                 vol.Required(CONF_NO_RESERVE, default=DEFAULT_NO_RESERVE): bool,
                 vol.Optional(CONF_BRAND, default=DEFAULT_BRAND): str,
+                vol.Optional(CONF_DEPARTMENT, default=DEFAULT_DEPARTMENT): str,
                 vol.Required(
                     CONF_CONDITION,
                     default=DEFAULT_CONDITION,
@@ -248,6 +251,10 @@ class NaturaBuyOptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_BRAND,
                     default=current.get(CONF_BRAND, DEFAULT_BRAND),
+                ): str,
+                vol.Optional(
+                    CONF_DEPARTMENT,
+                    default=current.get(CONF_DEPARTMENT, DEFAULT_DEPARTMENT),
                 ): str,
                 vol.Required(
                     CONF_CONDITION,

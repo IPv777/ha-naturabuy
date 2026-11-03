@@ -4,3 +4,23 @@ refresh:
 reset_cache:
   name: Réinitialiser le cache NaturaBuy
   description: Réinitialise l'historique des annonces déjà vues pour redécouvrir tous les articles actuels.
+mute_item:
+  name: Ignorer une annonce
+  description: Ignore définitivement une annonce par son ID NaturaBuy afin de ne plus recevoir d'alertes.
+  fields:
+    item_id:
+      name: ID de l'annonce
+      description: Identifiant unique de l'annonce (ex 15656255).
+      required: true
+      selector:
+        text:
+unmute_item:
+  name: Réactiver une annonce ignorée
+  description: Réactive une annonce précédemment ignorée.
+  fields:
+    item_id:
+      name: ID de l'annonce
+      description: Identifiant unique de l'annonce.
+      required: true
+      selector:
+        text:

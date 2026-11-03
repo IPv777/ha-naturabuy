@@ -88,6 +88,10 @@ class NaturaBuyTotalItemsSensor(NaturaBuyBaseSensor):
             type_badge = "Enchère" if it.is_auction else "Achat Immd."
             if it.has_no_reserve and it.is_auction:
                 type_badge += " (Sans PR)"
+            if it.free_shipping:
+                type_badge += " 📦"
+            if it.is_negotiable:
+                type_badge += " 💬"
             rem = it.remaining_time_str or "En vente"
             seller_str = f"⭐ ({it.seller_reviews})" if it.seller_reviews else (it.seller_type or "N/A")
             md_lines.append(f"| {link} | **{it.price_str}** | {type_badge} | {rem} | {seller_str} |")
@@ -100,6 +104,8 @@ class NaturaBuyTotalItemsSensor(NaturaBuyBaseSensor):
             "sale_type": self.coordinator.sale_type,
             "no_reserve": self.coordinator.no_reserve,
             "brand": self.coordinator.brand,
+            "department": self.coordinator.department,
+            "muted_items_count": len(self.coordinator.muted_item_ids),
             "is_turbo_active": self.coordinator.is_turbo_active,
             "url": self.coordinator.base_url,
             "markdown_table": markdown_summary,

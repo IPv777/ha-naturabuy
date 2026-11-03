@@ -7,7 +7,15 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import Event, HomeAssistant, ServiceCall
 
-from .const import ACTION_REFRESH, DOMAIN, SERVICE_REFRESH, SERVICE_RESET_CACHE
+from .const import (
+    ACTION_MUTE,
+    ACTION_REFRESH,
+    DOMAIN,
+    SERVICE_MUTE_ITEM,
+    SERVICE_REFRESH,
+    SERVICE_RESET_CACHE,
+    SERVICE_UNMUTE_ITEM,
+)
 from .coordinator import NaturaBuyCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,6 +66,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             handle_reset_cache,
         )
 
+    # Register mute item service if not already registered
+    if not hass.services.has_service(DOMAIN, SERVICE_MUTE_ITEM):
+        async def handle_mute_item(call: ServiceCall) -> None:
+            """Handle mute item service call."""
+            item_id = str(call.data.get("item_id", "")).strip()
+            if item_id:
+                _LOGGER.info("Mute item service called for %s", item_id)
+                for coord in hass.data.get(DOMAIN, {}).values():
+                    if isinstance(coord, NaturaBuyCoordinator):
+                        await coord.async_mute_item(item_id)
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_MUTE_ITEM,
+            handle_mute_item,
+        )
+
+    # Register unmute item service if not already registered
+    if not hass.services.has_service(DOMAIN, SERVICE_UNMUTE_ITEM):
+        async def handle_unmute_item(call: ServiceCall) -> None:
+            """Handle unmute item service call."""
+            item_id = str(call.data.get("item_id", "")).strip()
+            if item_id:
+                _LOGGER.info("Unmute item service called for %s", item_id)
+                for coord in hass.data.get(DOMAIN, {}).values():
+                    if isinstance(coord, NaturaBuyCoordinator):
+                        await coord.async_unmute_item(item_id)
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_UNMUTE_ITEM,
+            handle_unmute_item,
+        )
+
     # Register actionable notification listener
     if f"{DOMAIN}_action_listener" not in hass.data[DOMAIN]:
         async def handle_notification_action(event: Event) -> None:
@@ -68,6 +110,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 for coord in hass.data.get(DOMAIN, {}).values():
                     if isinstance(coord, NaturaBuyCoordinator):
                         await coord.async_request_refresh()
+            elif action == ACTION_MUTE:
+                tag = str(event.data.get("tag", ""))
+                item_id = tag.replace("naturabuy_", "") if "naturabuy_" in tag else event.data.get("item_id")
+                if item_id:
+                    _LOGGER.info("Received ThinkPhone action: NATURABUY_MUTE for item %s", item_id)
+                    for coord in hass.data.get(DOMAIN, {}).values():
+                        if isinstance(coord, NaturaBuyCoordinator):
+                            await coord.async_mute_item(str(item_id))
 
         hass.data[DOMAIN][f"{DOMAIN}_action_listener"] = hass.bus.async_listen(
             "mobile_app_notification_action",

@@ -139,6 +139,7 @@ def build_search_url(
     condition: str = "all",
     seller_type: str = "all",
     brand: str | None = None,
+    department: str | None = None,
     page: int = 1,
 ) -> str:
     """Inject search/filter parameters into NaturaBuy URL."""
@@ -147,8 +148,12 @@ def build_search_url(
 
     query_params["SortProperty"] = [sort]
 
+    # NaturaBuy router requires capital PAGE=N, lowercase page=N throws 404!
     if page > 1:
-        query_params["page"] = [str(page)]
+        query_params["PAGE"] = [str(page)]
+    else:
+        query_params.pop("PAGE", None)
+        query_params.pop("page", None)
 
     if max_price is not None and max_price > 0:
         query_params["maxprice"] = [str(int(max_price) if max_price.is_integer() else max_price)]
@@ -168,11 +173,12 @@ def build_search_url(
     if no_reserve:
         query_params["PR"] = ["noPR"]
 
-    # Condition
+    # Condition: NaturaBuy requires occasions=y for used, occasions=n for new.
+    # Passing occasions=occasions triggers a 404 router error!
     if condition == CONDITION_USED:
-        query_params["occasions"] = ["occasions"]
+        query_params["occasions"] = ["y"]
     elif condition == CONDITION_NEW:
-        query_params.pop("occasions", None)
+        query_params["occasions"] = ["n"]
 
     # Seller type
     if seller_type == SELLER_PARTICULIER:
@@ -184,12 +190,16 @@ def build_search_url(
     if brand and brand.strip():
         query_params["brand"] = [brand.strip()]
 
+    # Department filter if set (e.g. "57")
+    if department and department.strip():
+        query_params["dpt"] = [department.strip()]
+
     # Flatten single list values
     encoded_query = urlencode({k: v[0] for k, v in query_params.items()})
     return urlunparse(parsed._replace(query=encoded_query))
 
 
-def parse_items_from_html(html: str) -> list[NaturaBuyItem]:
+def parse_items_from_html(html: str, query_no_reserve: bool = False) -> list[NaturaBuyItem]:
     """Parse NaturaBuy HTML page into a list of NaturaBuyItem objects."""
     soup = BeautifulSoup(html, "html.parser")
     cards = soup.select(".itemCard")
@@ -244,7 +254,13 @@ def parse_items_from_html(html: str) -> list[NaturaBuyItem]:
         # Check for free shipping, reserve mentions, or negotiable offers
         all_card_text = card.get_text(" ", strip=True).lower()
         free_shipping = "livraison gratuite" in all_card_text or "port gratuit" in all_card_text
-        has_no_reserve = "sans reserve" in all_card_text or "sans réserve" in all_card_text or "sans prix de reserve" in all_card_text or "sans prix de réserve" in all_card_text
+        has_no_reserve = (
+            query_no_reserve
+            or "sans reserve" in all_card_text
+            or "sans réserve" in all_card_text
+            or "sans prix de reserve" in all_card_text
+            or "sans prix de réserve" in all_card_text
+        )
         is_negotiable = "offre" in all_card_text or "négociable" in all_card_text
 
         # Seller reviews count
@@ -367,7 +383,8 @@ async def async_fetch_naturabuy_page(
                 except UnicodeDecodeError:
                     html = raw_data.decode("utf-8", errors="replace")
 
-            return parse_items_from_html(html)
+            query_no_reserve = "PR=noPR" in url
+            return parse_items_from_html(html, query_no_reserve=query_no_reserve)
     except Exception as err:
         _LOGGER.error("Error fetching NaturaBuy page %s: %s", url, err)
         return []

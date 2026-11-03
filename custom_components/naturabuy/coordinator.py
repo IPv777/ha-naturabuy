@@ -13,10 +13,12 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
+    ACTION_MUTE,
     ACTION_REFRESH,
     CONF_ALERT_MINUTES,
     CONF_BRAND,
     CONF_CONDITION,
+    CONF_DEPARTMENT,
     CONF_KEYWORDS_EXCLUDE,
     CONF_KEYWORDS_INCLUDE,
     CONF_MAX_PAGES,
@@ -35,6 +37,7 @@ from .const import (
     DEFAULT_ALERT_MINUTES,
     DEFAULT_BRAND,
     DEFAULT_CONDITION,
+    DEFAULT_DEPARTMENT,
     DEFAULT_KEYWORDS_EXCLUDE,
     DEFAULT_KEYWORDS_INCLUDE,
     DEFAULT_MAX_PAGES,
@@ -50,6 +53,7 @@ from .const import (
     DOMAIN,
     EVENT_AUCTION_BUDGET_EXCEEDED,
     EVENT_AUCTION_ENDING_SOON,
+    EVENT_AUCTION_EXTENDED,
     EVENT_AUCTION_OUTBID,
     EVENT_NEW_LISTING,
     TURBO_SCAN_INTERVAL,
@@ -87,7 +91,9 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
         self.store = Store(hass, STORAGE_VERSION, f"naturabuy_{entry.entry_id}")
         self.seen_item_ids: set[str] = set()
         self.alerted_ending_ids: set[str] = set()
+        self.muted_item_ids: set[str] = set()
         self.last_known_bids: dict[str, float] = {}
+        self.last_remaining_seconds: dict[str, int] = {}
         self.initial_fetch_done = False
         self.is_turbo_active = False
 
@@ -95,6 +101,14 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
     def base_url(self) -> str:
         """Return base search URL."""
         return self.entry.options.get(CONF_URL, self.entry.data[CONF_URL])
+
+    @property
+    def department(self) -> str:
+        """Return department filter."""
+        return self.entry.options.get(
+            CONF_DEPARTMENT,
+            self.entry.data.get(CONF_DEPARTMENT, DEFAULT_DEPARTMENT),
+        )
 
     @property
     def max_price(self) -> float:
@@ -237,12 +251,14 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
         if stored and isinstance(stored, dict):
             self.seen_item_ids = set(stored.get("seen_ids", []))
             self.alerted_ending_ids = set(stored.get("alerted_ending_ids", []))
+            self.muted_item_ids = set(stored.get("muted_ids", []))
             self.last_known_bids = stored.get("last_known_bids", {})
             self.initial_fetch_done = True
             _LOGGER.debug(
-                "Restored NaturaBuy cache for %s (%d seen items)",
+                "Restored NaturaBuy cache for %s (%d seen items, %d muted)",
                 self.name,
                 len(self.seen_item_ids),
+                len(self.muted_item_ids),
             )
 
     async def async_save_storage(self) -> None:
@@ -251,17 +267,48 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
             {
                 "seen_ids": list(self.seen_item_ids),
                 "alerted_ending_ids": list(self.alerted_ending_ids),
+                "muted_ids": list(self.muted_item_ids),
                 "last_known_bids": self.last_known_bids,
             }
         )
 
     async def async_reset_cache(self) -> None:
-        """Reset seen cache to rediscover all items."""
+        """Reset seen cache to rediscover all items (preserving muted items)."""
         self.seen_item_ids.clear()
         self.alerted_ending_ids.clear()
         self.last_known_bids.clear()
+        self.last_remaining_seconds.clear()
         self.initial_fetch_done = False
         await self.async_save_storage()
+        await self.async_request_refresh()
+
+    async def async_mute_item(self, item_id: str) -> None:
+        """Mute an item so it never triggers alerts or appears in active list."""
+        self.muted_item_ids.add(str(item_id))
+        await self.async_save_storage()
+        _LOGGER.info("Item %s muted for %s", item_id, self.name)
+        # Clear notification from ThinkPhone if currently active
+        targets = self.notify_targets
+        for target in targets:
+            service_name = target.replace("notify.", "")
+            try:
+                await self.hass.services.async_call(
+                    "notify",
+                    service_name,
+                    {
+                        "message": "clear_notification",
+                        "data": {"tag": f"naturabuy_{item_id}"},
+                    },
+                )
+            except Exception as err:
+                _LOGGER.debug("Could not clear notification for %s: %s", item_id, err)
+        await self.async_request_refresh()
+
+    async def async_unmute_item(self, item_id: str) -> None:
+        """Unmute an item."""
+        self.muted_item_ids.discard(str(item_id))
+        await self.async_save_storage()
+        _LOGGER.info("Item %s unmuted for %s", item_id, self.name)
         await self.async_request_refresh()
 
     async def _async_update_data(self) -> list[NaturaBuyItem]:
@@ -285,6 +332,7 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
                     condition=self.condition,
                     seller_type=self.seller_type,
                     brand=self.brand,
+                    department=self.department,
                     page=page,
                 )
                 items_ends = await async_fetch_naturabuy_page(self.session, ends_url)
@@ -305,6 +353,7 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
                     condition=self.condition,
                     seller_type=self.seller_type,
                     brand=self.brand,
+                    department=self.department,
                     page=page,
                 )
                 items_starts = await async_fetch_naturabuy_page(self.session, starts_url)
@@ -314,9 +363,11 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
 
                 await asyncio.sleep(0.3)
 
-            # Apply keyword exclusion/inclusion filters
+            # Apply muted and keyword exclusion/inclusion filters
             filtered_items: list[NaturaBuyItem] = []
             for item in unique_items.values():
+                if item.id in self.muted_item_ids:
+                    continue
                 if matches_keywords(
                     item.title,
                     keywords_include=self.keywords_include,
@@ -458,6 +509,30 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
                             )
                             self.last_known_bids[item.id] = item.price
 
+                    # Anti-sniping prolongation check: if remaining seconds jumped back up
+                    prev_rem = self.last_remaining_seconds.get(item.id)
+                    if (
+                        prev_rem is not None
+                        and prev_rem <= 330
+                        and item.remaining_seconds is not None
+                        and item.remaining_seconds > prev_rem + 120
+                    ):
+                        _LOGGER.info("NaturaBuy anti-sniping extension for %s: +%ds", item.title, item.remaining_seconds - prev_rem)
+                        await self._send_notification(
+                            title=f"⏱️ [Prolongation Anti-Sniping !] {item.title[:24]}",
+                            message=(
+                                f"L'enchère a été prolongée de 5 min suite à une enchère de dernière minute !\n"
+                                f"Nouveau temps : {item.remaining_time_str} | Prix : {item.price_str} ({bids_txt})"
+                            ),
+                            item=item,
+                            event_type=EVENT_AUCTION_EXTENDED,
+                            tag=f"naturabuy_{item.id}",
+                            high_priority=True,
+                        )
+
+                    if item.remaining_seconds is not None:
+                        self.last_remaining_seconds[item.id] = item.remaining_seconds
+
             # Mark as seen
             self.seen_item_ids.add(item.id)
 
@@ -498,6 +573,10 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
                 {
                     "action": ACTION_REFRESH,
                     "title": "🔄 Actualiser",
+                },
+                {
+                    "action": ACTION_MUTE,
+                    "title": "🔕 Ignorer",
                 },
             ],
         }
