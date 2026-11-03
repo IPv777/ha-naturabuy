@@ -322,16 +322,28 @@ def parse_items_from_html(html: str, query_no_reserve: bool = False) -> list[Nat
                 if p is not None:
                     bold_prices.append(p)
 
+        card_data_price = clean_price(card.get("data-price"))
         auction_price: float | None = None
         buy_now_price: float | None = None
 
-        if is_auction and is_buy_now and len(bold_prices) >= 2:
-            auction_price = bold_prices[0]
-            buy_now_price = bold_prices[1]
+        if is_auction and "achat" in type_text:
+            is_buy_now = True
+            if len(bold_prices) >= 2:
+                auction_price = bold_prices[0]
+                buy_now_price = bold_prices[1]
+            else:
+                auction_price = bold_prices[0] if bold_prices else None
+                buy_now_price = card_data_price
         elif is_auction:
-            auction_price = bold_prices[0] if bold_prices else clean_price(card.get("data-price"))
+            auction_price = bold_prices[0] if bold_prices else card_data_price
+            if len(bold_prices) >= 2:
+                buy_now_price = bold_prices[1]
+                is_buy_now = True
+            elif card_data_price is not None and auction_price is not None and card_data_price > auction_price:
+                buy_now_price = card_data_price
+                is_buy_now = True
         elif is_buy_now:
-            buy_now_price = bold_prices[0] if bold_prices else clean_price(card.get("data-price"))
+            buy_now_price = bold_prices[0] if bold_prices else card_data_price
 
         # Effective price for comparison
         main_price = auction_price if is_auction and auction_price is not None else (buy_now_price or 0.0)
@@ -535,3 +547,51 @@ async def async_fetch_naturabuy_page(
     except Exception as err:
         _LOGGER.error("Error fetching NaturaBuy page %s: %s", url, err)
         return []
+
+
+async def async_fetch_item_reserve_status(
+    session: aiohttp.ClientSession,
+    url: str,
+) -> tuple[bool, float | None]:
+    """Fetch item page to check if it has an unreached reserve price and extract buy_now_price.
+
+    Returns:
+        tuple (has_unreached_reserve: bool, buy_now_price: float | None)
+    """
+    try:
+        async with session.get(
+            url,
+            headers=DEFAULT_HEADERS,
+            timeout=aiohttp.ClientTimeout(total=8),
+        ) as resp:
+            if resp.status != 200:
+                _LOGGER.debug("Could not fetch item page %s: HTTP %s", url, resp.status)
+                return (False, None)
+            raw = await resp.read()
+            try:
+                html = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                html = raw.decode("iso-8859-1", errors="replace")
+
+            soup = BeautifulSoup(html, "html.parser")
+
+            # Check reserve price indicator
+            # NaturaBuy renders <a id="TPL_reserve_price" ...>Prix de réserve non atteint</a>
+            tpl_elem = soup.select_one("#TPL_reserve_price")
+            has_reserve_unreached = False
+            if tpl_elem:
+                text = tpl_elem.get_text(strip=True).lower()
+                if "non atteint" in text or "reserve" in text or "réserve" in text:
+                    has_reserve_unreached = True
+
+            # Also check buybox price if available
+            buy_now_price = None
+            buybox = soup.select_one("#buyboxprice")
+            if buybox:
+                buy_now_price = clean_price(buybox.get_text(strip=True))
+
+            return (has_reserve_unreached, buy_now_price)
+    except Exception as err:
+        _LOGGER.debug("Error checking reserve status for %s: %s", url, err)
+        return (False, None)
+

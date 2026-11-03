@@ -60,6 +60,7 @@ from .const import (
 )
 from .scraper import (
     NaturaBuyItem,
+    async_fetch_item_reserve_status,
     async_fetch_naturabuy_page,
     build_search_url,
     matches_keywords,
@@ -94,6 +95,7 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
         self.muted_item_ids: set[str] = set()
         self.last_known_bids: dict[str, float] = {}
         self.last_remaining_seconds: dict[str, int] = {}
+        self.reserve_cache: dict[str, dict[str, Any]] = {}
         self.initial_fetch_done = False
         self.is_turbo_active = False
 
@@ -253,12 +255,14 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
             self.alerted_ending_ids = set(stored.get("alerted_ending_ids", []))
             self.muted_item_ids = set(stored.get("muted_ids", []))
             self.last_known_bids = stored.get("last_known_bids", {})
+            self.reserve_cache = stored.get("reserve_cache", {})
             self.initial_fetch_done = True
             _LOGGER.debug(
-                "Restored NaturaBuy cache for %s (%d seen items, %d muted)",
+                "Restored NaturaBuy cache for %s (%d seen items, %d muted, %d reserve checks)",
                 self.name,
                 len(self.seen_item_ids),
                 len(self.muted_item_ids),
+                len(self.reserve_cache),
             )
 
     async def async_save_storage(self) -> None:
@@ -269,6 +273,7 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
                 "alerted_ending_ids": list(self.alerted_ending_ids),
                 "muted_ids": list(self.muted_item_ids),
                 "last_known_bids": self.last_known_bids,
+                "reserve_cache": self.reserve_cache,
             }
         )
 
@@ -278,6 +283,7 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
         self.alerted_ending_ids.clear()
         self.last_known_bids.clear()
         self.last_remaining_seconds.clear()
+        self.reserve_cache.clear()
         self.initial_fetch_done = False
         await self.async_save_storage()
         await self.async_request_refresh()
@@ -371,7 +377,7 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
                 await asyncio.sleep(0.3)
 
             # Apply muted and keyword exclusion/inclusion filters
-            filtered_items: list[NaturaBuyItem] = []
+            candidates: list[NaturaBuyItem] = []
             for item in unique_items.values():
                 if item.id in self.muted_item_ids:
                     continue
@@ -380,7 +386,72 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
                     keywords_include=self.keywords_include,
                     keywords_exclude=self.keywords_exclude,
                 ):
-                    filtered_items.append(item)
+                    candidates.append(item)
+
+            # Check reserve price for unconfirmed auctions
+            items_to_check: list[NaturaBuyItem] = []
+            reserve_tasks = []
+            for it in candidates:
+                if it.is_auction and not it.has_no_reserve:
+                    if it.id not in self.reserve_cache:
+                        items_to_check.append(it)
+                        reserve_tasks.append(
+                            async_fetch_item_reserve_status(self.session, it.url)
+                        )
+
+            if reserve_tasks:
+                check_results = await asyncio.gather(*reserve_tasks, return_exceptions=True)
+                for it, res in zip(items_to_check, check_results):
+                    if isinstance(res, tuple):
+                        has_unreached, buy_now = res
+                        self.reserve_cache[it.id] = {
+                            "has_unreached_reserve": has_unreached,
+                            "buy_now_price": buy_now,
+                        }
+                    else:
+                        _LOGGER.debug("Error checking reserve for %s: %s", it.id, res)
+                        self.reserve_cache[it.id] = {
+                            "has_unreached_reserve": True,
+                            "buy_now_price": it.buy_now_price,
+                        }
+
+            # Filter items according to user rules:
+            # - Auctions with unreached reserve price are discarded
+            # - Unless their buy_now_price meets criteria (buy_now_price <= max_price), in which case kept as direct buy
+            # - Real no-reserve auctions and pure direct-buys are kept if price <= max_price
+            filtered_items: list[NaturaBuyItem] = []
+            for it in candidates:
+                if it.is_auction and not it.has_no_reserve:
+                    cached = self.reserve_cache.get(it.id, {})
+                    has_unreached = cached.get("has_unreached_reserve", True)
+                    buy_now = cached.get("buy_now_price") or it.buy_now_price
+                    if has_unreached:
+                        if buy_now is not None and (self.max_price <= 0 or buy_now <= self.max_price):
+                            # Convert to direct buy
+                            it.price = buy_now
+                            it.price_str = f"{buy_now:.2f} €"
+                            it.buy_now_price = buy_now
+                            it.is_auction = False
+                            it.is_buy_now = True
+                            it.urgency_level = "buy_now"
+                            filtered_items.append(it)
+                        else:
+                            # Discard auction with unreached reserve price
+                            _LOGGER.debug(
+                                "Discarding NaturaBuy auction %s (%s): reserve unreached",
+                                it.id,
+                                it.title,
+                            )
+                            continue
+                    else:
+                        # Genuine auction where reserve was reached or seller had no reserve
+                        it.has_no_reserve = True
+                        if self.max_price <= 0 or it.price <= self.max_price:
+                            filtered_items.append(it)
+                else:
+                    # Pure direct-buy or confirmed no-reserve auction
+                    if self.max_price <= 0 or it.price <= self.max_price:
+                        filtered_items.append(it)
 
             # Sort items: auctions ending soonest first, then newest
             filtered_items.sort(
