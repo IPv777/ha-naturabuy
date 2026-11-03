@@ -1,0 +1,44 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Surveillance NaturaBuy",
+        "description": "Configurez les critères de recherche et les alertes pour NaturaBuy.",
+        "data": {
+          "name": "Nom de la surveillance",
+          "url": "URL NaturaBuy",
+          "max_price": "Prix maximum (€)",
+          "min_price": "Prix minimum (€)",
+          "sale_type": "Type de vente",
+          "notify_new": "Alerter lors d'une nouvelle annonce",
+          "notify_ending": "Alerter avant la fin d'une enchère",
+          "alert_minutes": "Délai d'alerte avant la fin (minutes)",
+          "notify_targets": "Téléphones à notifier",
+          "scan_interval": "Intervalle de vérification (minutes)"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Veuillez saisir une URL valide commençant par http:// ou https://"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options de surveillance NaturaBuy",
+        "description": "Modifiez les paramètres de recherche et les alertes.",
+        "data": {
+          "url": "URL NaturaBuy",
+          "max_price": "Prix maximum (€)",
+          "min_price": "Prix minimum (€)",
+          "sale_type": "Type de vente",
+          "notify_new": "Alerter lors d'une nouvelle annonce",
+          "notify_ending": "Alerter avant la fin d'une enchère",
+          "alert_minutes": "Délai d'alerte avant la fin (minutes)",
+          "notify_targets": "Téléphones à notifier",
+          "scan_interval": "Intervalle de vérification (minutes)"
+        }
+      }
+    }
+  }
+}

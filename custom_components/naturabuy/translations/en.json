@@ -1,0 +1,44 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "NaturaBuy Watch",
+        "description": "Configure search criteria and notifications for NaturaBuy.",
+        "data": {
+          "name": "Watch Name",
+          "url": "NaturaBuy URL",
+          "max_price": "Max Price (€)",
+          "min_price": "Min Price (€)",
+          "sale_type": "Sale Type",
+          "notify_new": "Notify on new listings",
+          "notify_ending": "Notify on ending auctions",
+          "alert_minutes": "Minutes before auction end to alert",
+          "notify_targets": "Notification targets (smartphones)",
+          "scan_interval": "Check interval (minutes)"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Please provide a valid URL starting with http:// or https://"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "NaturaBuy Watch Options",
+        "description": "Modify search parameters and notification options.",
+        "data": {
+          "url": "NaturaBuy URL",
+          "max_price": "Max Price (€)",
+          "min_price": "Min Price (€)",
+          "sale_type": "Sale Type",
+          "notify_new": "Notify on new listings",
+          "notify_ending": "Notify on ending auctions",
+          "alert_minutes": "Minutes before auction end to alert",
+          "notify_targets": "Notification targets (smartphones)",
+          "scan_interval": "Check interval (minutes)"
+        }
+      }
+    }
+  }
+}
