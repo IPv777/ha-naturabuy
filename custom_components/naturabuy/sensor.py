@@ -264,7 +264,11 @@ class NaturaBuyNextEndingAuctionSensor(NaturaBuyBaseSensor):
         next_it = self._next_auction()
         if not next_it:
             return {}
-        return next_it.to_dict()
+        attrs = next_it.to_display_dict()
+        if next_it.remaining_seconds is not None:
+            ends_dt = datetime.now(timezone.utc) + timedelta(seconds=next_it.remaining_seconds)
+            attrs["ends_at_utc"] = ends_dt.isoformat()
+        return attrs
 
 
 class NaturaBuyLatestItemSensor(NaturaBuyBaseSensor):
@@ -288,7 +292,7 @@ class NaturaBuyLatestItemSensor(NaturaBuyBaseSensor):
         items = self.coordinator.data or []
         if not items:
             return {}
-        return items[0].to_dict()
+        return items[0].to_display_dict()
 
 
 class NaturaBuyMinPriceSensor(NaturaBuyBaseSensor):
