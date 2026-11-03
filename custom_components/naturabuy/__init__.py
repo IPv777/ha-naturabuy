@@ -6,7 +6,6 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN, SERVICE_REFRESH
 from .coordinator import NaturaBuyCoordinator
@@ -30,7 +29,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     # Register refresh service if not already registered
-    if not hass.services.has(DOMAIN, SERVICE_REFRESH):
+    if not hass.services.has_service(DOMAIN, SERVICE_REFRESH):
         async def handle_refresh(call: ServiceCall) -> None:
             """Handle manual refresh service call."""
             _LOGGER.debug("Manual refresh requested for NaturaBuy")
