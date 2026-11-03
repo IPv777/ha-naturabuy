@@ -1,6 +1,7 @@
-"""Scraper for NaturaBuy listings and auctions."""
+"""Scraper for NaturaBuy listings and auctions with enhanced filters and data extraction."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
@@ -12,10 +13,14 @@ import aiohttp
 from bs4 import BeautifulSoup
 
 from .const import (
+    CONDITION_NEW,
+    CONDITION_USED,
     DEFAULT_USER_AGENT,
     SALE_TYPE_ALL,
     SALE_TYPE_AUCTION,
     SALE_TYPE_BUY_NOW,
+    SELLER_PARTICULIER,
+    SELLER_PRO,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,6 +45,9 @@ class NaturaBuyItem:
     brand: str | None
     condition: str | None
     seller_type: str | None
+    bids_count: int
+    has_no_reserve: bool
+    free_shipping: bool
     is_newly_added: bool
     date_detected: datetime
 
@@ -61,6 +69,9 @@ class NaturaBuyItem:
             "brand": self.brand,
             "condition": self.condition,
             "seller_type": self.seller_type,
+            "bids_count": self.bids_count,
+            "has_no_reserve": self.has_no_reserve,
+            "free_shipping": self.free_shipping,
             "is_newly_added": self.is_newly_added,
             "date_detected": self.date_detected.isoformat(),
         }
@@ -120,6 +131,10 @@ def build_search_url(
     min_price: float | None = None,
     sort: str = "ends",
     sale_type: str = SALE_TYPE_ALL,
+    no_reserve: bool = False,
+    condition: str = "all",
+    seller_type: str = "all",
+    page: int = 1,
 ) -> str:
     """Inject search/filter parameters into NaturaBuy URL."""
     parsed = urlparse(base_url)
@@ -127,18 +142,38 @@ def build_search_url(
 
     query_params["SortProperty"] = [sort]
 
+    if page > 1:
+        query_params["page"] = [str(page)]
+
     if max_price is not None and max_price > 0:
         query_params["maxprice"] = [str(int(max_price) if max_price.is_integer() else max_price)]
 
     if min_price is not None and min_price > 0:
         query_params["minprice"] = [str(int(min_price) if min_price.is_integer() else min_price)]
 
+    # Sale type
     if sale_type == SALE_TYPE_AUCTION:
         query_params["normal"] = ["y"]
         query_params.pop("buyitnowonly", None)
     elif sale_type == SALE_TYPE_BUY_NOW:
         query_params["buyitnowonly"] = ["y"]
         query_params.pop("normal", None)
+
+    # No reserve price filter
+    if no_reserve:
+        query_params["PR"] = ["noPR"]
+
+    # Condition
+    if condition == CONDITION_USED:
+        query_params["occasions"] = ["occasions"]
+    elif condition == CONDITION_NEW:
+        query_params.pop("occasions", None)
+
+    # Seller type
+    if seller_type == SELLER_PARTICULIER:
+        query_params["ispro"] = ["part"]
+    elif seller_type == SELLER_PRO:
+        query_params["ispro"] = ["pro"]
 
     # Flatten single list values
     encoded_query = urlencode({k: v[0] for k, v in query_params.items()})
@@ -190,6 +225,17 @@ def parse_items_from_html(html: str) -> list[NaturaBuyItem]:
 
         is_auction = "ench" in type_text
         is_buy_now = "achat" in type_text or not is_auction
+
+        # Bids count
+        bids_count = 0
+        bids_match = re.search(r"(\d+)\s*ench", type_text)
+        if bids_match:
+            bids_count = int(bids_match.group(1))
+
+        # Check for free shipping or no reserve mentions
+        all_card_text = card.get_text(" ", strip=True).lower()
+        free_shipping = "livraison gratuite" in all_card_text or "port gratuit" in all_card_text
+        has_no_reserve = "sans reserve" in all_card_text or "sans réserve" in all_card_text or "sans prix de reserve" in all_card_text or "sans prix de réserve" in all_card_text
 
         # Prices: find bold elements containing euro symbol
         bold_prices: list[float] = []
@@ -247,12 +293,39 @@ def parse_items_from_html(html: str) -> list[NaturaBuyItem]:
                 brand=brand,
                 condition=condition,
                 seller_type=seller_type,
+                bids_count=bids_count,
+                has_no_reserve=has_no_reserve,
+                free_shipping=free_shipping,
                 is_newly_added=is_newly_added,
                 date_detected=now,
             )
         )
 
     return items
+
+
+def matches_keywords(
+    title: str,
+    keywords_include: str | None = None,
+    keywords_exclude: str | None = None,
+) -> bool:
+    """Filter item title by inclusion and exclusion keywords."""
+    title_lower = title.lower()
+
+    # Check exclusions
+    if keywords_exclude:
+        for kw in [k.strip().lower() for k in keywords_exclude.split(",") if k.strip()]:
+            if kw in title_lower:
+                return False
+
+    # Check inclusions
+    if keywords_include:
+        include_list = [k.strip().lower() for k in keywords_include.split(",") if k.strip()]
+        if include_list:
+            if not any(kw in title_lower for kw in include_list):
+                return False
+
+    return True
 
 
 async def async_fetch_naturabuy_page(
@@ -267,7 +340,6 @@ async def async_fetch_naturabuy_page(
                 _LOGGER.error("Failed to fetch NaturaBuy page %s, status code: %s", url, resp.status)
                 return []
             raw_data = await resp.read()
-            # Try utf-8 first, fallback to latin-1 / windows-1252
             try:
                 html = raw_data.decode("utf-8")
             except UnicodeDecodeError:

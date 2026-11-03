@@ -1,4 +1,4 @@
-"""Config flow for NaturaBuy integration."""
+"""Config flow for NaturaBuy integration with advanced filters."""
 from __future__ import annotations
 
 import logging
@@ -12,29 +12,46 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .const import (
+    CONDITION_ALL,
+    CONDITION_NEW,
+    CONDITION_USED,
     CONF_ALERT_MINUTES,
+    CONF_CONDITION,
+    CONF_KEYWORDS_EXCLUDE,
+    CONF_KEYWORDS_INCLUDE,
+    CONF_MAX_PAGES,
     CONF_MAX_PRICE,
     CONF_MIN_PRICE,
     CONF_NAME,
+    CONF_NO_RESERVE,
     CONF_NOTIFY_ENDING,
     CONF_NOTIFY_NEW,
     CONF_NOTIFY_TARGETS,
     CONF_SALE_TYPE,
     CONF_SCAN_INTERVAL,
+    CONF_SELLER_TYPE,
     CONF_URL,
     DEFAULT_ALERT_MINUTES,
+    DEFAULT_CONDITION,
+    DEFAULT_KEYWORDS_EXCLUDE,
+    DEFAULT_KEYWORDS_INCLUDE,
+    DEFAULT_MAX_PAGES,
     DEFAULT_MAX_PRICE,
     DEFAULT_MIN_PRICE,
     DEFAULT_NAME,
+    DEFAULT_NO_RESERVE,
     DEFAULT_NOTIFY_ENDING,
     DEFAULT_NOTIFY_NEW,
     DEFAULT_SALE_TYPE,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_SELLER_TYPE,
     DOMAIN,
     SALE_TYPE_ALL,
     SALE_TYPE_AUCTION,
     SALE_TYPE_BUY_NOW,
-    SALE_TYPES,
+    SELLER_ALL,
+    SELLER_PARTICULIER,
+    SELLER_PRO,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -108,12 +125,44 @@ class NaturaBuyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),
+                vol.Required(CONF_NO_RESERVE, default=DEFAULT_NO_RESERVE): bool,
+                vol.Required(
+                    CONF_CONDITION,
+                    default=DEFAULT_CONDITION,
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value=CONDITION_ALL, label="Tous états (Neuf et Occasion)"),
+                            selector.SelectOptionDict(value=CONDITION_USED, label="Occasion uniquement"),
+                            selector.SelectOptionDict(value=CONDITION_NEW, label="Neuf uniquement"),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(
+                    CONF_SELLER_TYPE,
+                    default=DEFAULT_SELLER_TYPE,
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value=SELLER_ALL, label="Tous vendeurs (Particuliers et Pros)"),
+                            selector.SelectOptionDict(value=SELLER_PARTICULIER, label="Particuliers uniquement"),
+                            selector.SelectOptionDict(value=SELLER_PRO, label="Professionnels uniquement"),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_KEYWORDS_EXCLUDE, default=DEFAULT_KEYWORDS_EXCLUDE): str,
+                vol.Optional(CONF_KEYWORDS_INCLUDE, default=DEFAULT_KEYWORDS_INCLUDE): str,
+                vol.Required(CONF_MAX_PAGES, default=DEFAULT_MAX_PAGES): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=1, max=5, step=1, mode=selector.NumberSelectorMode.SLIDER)
+                ),
                 vol.Required(CONF_NOTIFY_NEW, default=DEFAULT_NOTIFY_NEW): bool,
                 vol.Required(CONF_NOTIFY_ENDING, default=DEFAULT_NOTIFY_ENDING): bool,
                 vol.Required(CONF_ALERT_MINUTES, default=DEFAULT_ALERT_MINUTES): vol.Coerce(int),
                 vol.Optional(
                     CONF_NOTIFY_TARGETS,
-                    default=[],
+                    default=["notify.mobile_app_thinkphone_by_motorola"],
                 ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=notify_options,
@@ -137,11 +186,15 @@ class NaturaBuyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> NaturaBuyOptionsFlowHandler:
         """Get options flow."""
-        return NaturaBuyOptionsFlowHandler()
+        return NaturaBuyOptionsFlowHandler(config_entry)
 
 
 class NaturaBuyOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options flow for NaturaBuy."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize options flow."""
+        self._config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -152,7 +205,7 @@ class NaturaBuyOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current = {**self.config_entry.data, **self.config_entry.options}
+        current = {**self._config_entry.data, **self._config_entry.options}
         notify_options = _get_notify_services(self.hass)
 
         schema = vol.Schema(
@@ -183,6 +236,50 @@ class NaturaBuyOptionsFlowHandler(config_entries.OptionsFlow):
                     )
                 ),
                 vol.Required(
+                    CONF_NO_RESERVE,
+                    default=current.get(CONF_NO_RESERVE, DEFAULT_NO_RESERVE),
+                ): bool,
+                vol.Required(
+                    CONF_CONDITION,
+                    default=current.get(CONF_CONDITION, DEFAULT_CONDITION),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value=CONDITION_ALL, label="Tous états (Neuf et Occasion)"),
+                            selector.SelectOptionDict(value=CONDITION_USED, label="Occasion uniquement"),
+                            selector.SelectOptionDict(value=CONDITION_NEW, label="Neuf uniquement"),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(
+                    CONF_SELLER_TYPE,
+                    default=current.get(CONF_SELLER_TYPE, DEFAULT_SELLER_TYPE),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value=SELLER_ALL, label="Tous vendeurs (Particuliers et Pros)"),
+                            selector.SelectOptionDict(value=SELLER_PARTICULIER, label="Particuliers uniquement"),
+                            selector.SelectOptionDict(value=SELLER_PRO, label="Professionnels uniquement"),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(
+                    CONF_KEYWORDS_EXCLUDE,
+                    default=current.get(CONF_KEYWORDS_EXCLUDE, DEFAULT_KEYWORDS_EXCLUDE),
+                ): str,
+                vol.Optional(
+                    CONF_KEYWORDS_INCLUDE,
+                    default=current.get(CONF_KEYWORDS_INCLUDE, DEFAULT_KEYWORDS_INCLUDE),
+                ): str,
+                vol.Required(
+                    CONF_MAX_PAGES,
+                    default=current.get(CONF_MAX_PAGES, DEFAULT_MAX_PAGES),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=1, max=5, step=1, mode=selector.NumberSelectorMode.SLIDER)
+                ),
+                vol.Required(
                     CONF_NOTIFY_NEW,
                     default=current.get(CONF_NOTIFY_NEW, DEFAULT_NOTIFY_NEW),
                 ): bool,
@@ -196,7 +293,7 @@ class NaturaBuyOptionsFlowHandler(config_entries.OptionsFlow):
                 ): vol.Coerce(int),
                 vol.Optional(
                     CONF_NOTIFY_TARGETS,
-                    default=current.get(CONF_NOTIFY_TARGETS, []),
+                    default=current.get(CONF_NOTIFY_TARGETS, ["notify.mobile_app_thinkphone_by_motorola"]),
                 ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=notify_options,

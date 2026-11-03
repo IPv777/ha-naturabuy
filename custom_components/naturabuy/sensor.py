@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -61,7 +61,7 @@ class NaturaBuyBaseSensor(CoordinatorEntity[NaturaBuyCoordinator], SensorEntity)
 
 
 class NaturaBuyTotalItemsSensor(NaturaBuyBaseSensor):
-    """Sensor showing total matching items."""
+    """Sensor showing total matching items with Markdown table for Lovelace."""
 
     def __init__(self, coordinator: NaturaBuyCoordinator, entry: ConfigEntry) -> None:
         """Initialize the sensor."""
@@ -73,20 +73,32 @@ class NaturaBuyTotalItemsSensor(NaturaBuyBaseSensor):
     @property
     def native_value(self) -> int:
         """Return total items count."""
-        if not self.coordinator.data:
-            return 0
-        return len(self.coordinator.data)
+        return len(self.coordinator.data or [])
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return top items attributes."""
+        """Return top items attributes and markdown summary."""
         items = self.coordinator.data or []
+
+        # Generate markdown table for Home Assistant Dashboard
+        md_lines = ["| Arme | Prix | Type | Fin |", "| :--- | :---: | :---: | :---: |"]
+        for it in items[:10]:
+            title_clean = it.title.replace("|", "-")
+            link = f"[{title_clean[:32]}]({it.url})"
+            type_badge = "Enchère" if it.is_auction else "Achat Immd."
+            rem = it.remaining_time_str or "En vente"
+            md_lines.append(f"| {link} | **{it.price_str}** | {type_badge} | {rem} |")
+
+        markdown_summary = "\n".join(md_lines)
+
         return {
             "max_price": self.coordinator.max_price,
             "min_price": self.coordinator.min_price,
             "sale_type": self.coordinator.sale_type,
+            "no_reserve": self.coordinator.no_reserve,
             "url": self.coordinator.base_url,
-            "items_sample": [item.to_dict() for item in items[:5]],
+            "markdown_table": markdown_summary,
+            "items_sample": [item.to_dict() for item in items[:8]],
         }
 
 
@@ -105,6 +117,16 @@ class NaturaBuyActiveAuctionsSensor(NaturaBuyBaseSensor):
         """Return active auctions count."""
         items = self.coordinator.data or []
         return sum(1 for it in items if it.is_auction)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return details on active auctions."""
+        auctions = [it for it in (self.coordinator.data or []) if it.is_auction]
+        return {
+            "auctions_count": len(auctions),
+            "no_reserve_count": sum(1 for a in auctions if a.has_no_reserve),
+            "auctions": [a.to_dict() for a in auctions[:5]],
+        }
 
 
 class NaturaBuyNextEndingAuctionSensor(NaturaBuyBaseSensor):

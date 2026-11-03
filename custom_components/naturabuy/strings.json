@@ -2,42 +2,75 @@
   "config": {
     "step": {
       "user": {
-        "title": "NaturaBuy Watch",
-        "description": "Configure search criteria and notifications for NaturaBuy.",
+        "title": "Surveillance NaturaBuy",
+        "description": "Configurez les critères de recherche, les filtres avancés et les alertes pour NaturaBuy.",
         "data": {
-          "name": "Watch Name",
-          "url": "NaturaBuy URL",
-          "max_price": "Max Price (€)",
-          "min_price": "Min Price (€)",
-          "sale_type": "Sale Type",
-          "notify_new": "Notify on new listings",
-          "notify_ending": "Notify on ending auctions",
-          "alert_minutes": "Minutes before auction end to alert",
-          "notify_targets": "Notification targets (smartphones)",
-          "scan_interval": "Check interval (minutes)"
+          "name": "Nom de la surveillance",
+          "url": "URL NaturaBuy",
+          "max_price": "Prix maximum (€)",
+          "min_price": "Prix minimum (€)",
+          "sale_type": "Type de vente",
+          "no_reserve": "Enchères sans prix de réserve uniquement",
+          "condition": "État de l'objet",
+          "seller_type": "Type de vendeur",
+          "keywords_exclude": "Mots-clés à exclure (ex: chargeur, crosse, rail)",
+          "keywords_include": "Mots-clés obligatoires (optionnel)",
+          "max_pages": "Profondeur d'analyse (nombre de pages)",
+          "notify_new": "Alerter lors d'une nouvelle annonce",
+          "notify_ending": "Alerter avant la fin d'une enchère",
+          "alert_minutes": "Délai d'alerte avant la fin (minutes)",
+          "notify_targets": "Téléphones à notifier (ex: ThinkPhone)",
+          "scan_interval": "Intervalle de vérification (minutes)"
         }
       }
     },
     "error": {
-      "invalid_url": "Please provide a valid URL starting with http:// or https://"
+      "invalid_url": "Veuillez saisir une URL valide commençant par http:// ou https://"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "NaturaBuy Watch Options",
-        "description": "Modify search parameters and notification options.",
+        "title": "Options de surveillance NaturaBuy",
+        "description": "Modifiez les paramètres de recherche, filtres et alertes.",
         "data": {
-          "url": "NaturaBuy URL",
-          "max_price": "Max Price (€)",
-          "min_price": "Min Price (€)",
-          "sale_type": "Sale Type",
-          "notify_new": "Notify on new listings",
-          "notify_ending": "Notify on ending auctions",
-          "alert_minutes": "Minutes before auction end to alert",
-          "notify_targets": "Notification targets (smartphones)",
-          "scan_interval": "Check interval (minutes)"
+          "url": "URL NaturaBuy",
+          "max_price": "Prix maximum (€)",
+          "min_price": "Prix minimum (€)",
+          "sale_type": "Type de vente",
+          "no_reserve": "Enchères sans prix de réserve uniquement",
+          "condition": "État de l'objet",
+          "seller_type": "Type de vendeur",
+          "keywords_exclude": "Mots-clés à exclure (ex: chargeur, crosse, rail)",
+          "keywords_include": "Mots-clés obligatoires (optionnel)",
+          "max_pages": "Profondeur d'analyse (nombre de pages)",
+          "notify_new": "Alerter lors d'une nouvelle annonce",
+          "notify_ending": "Alerter avant la fin d'une enchère",
+          "alert_minutes": "Délai d'alerte avant la fin (minutes)",
+          "notify_targets": "Téléphones à notifier (ex: ThinkPhone)",
+          "scan_interval": "Intervalle de vérification (minutes)"
         }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "ending_alert": {
+        "name": "Alerte fin imminente"
+      }
+    },
+    "sensor": {
+      "total_items": {
+        "name": "Total annonces"
+      },
+      "active_auctions": {
+        "name": "Enchères actives"
+      },
+      "next_ending_auction": {
+        "name": "Prochaine fin d'enchère"
+      },
+      "latest_item": {
+        "name": "Dernière annonce"
       }
     }
   }
