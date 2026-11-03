@@ -345,8 +345,28 @@ def matches_keywords(
     keywords_include: str | None = None,
     keywords_exclude: str | None = None,
 ) -> bool:
-    """Filter item title by inclusion and exclusion keywords."""
-    title_lower = title.lower()
+    """Filter item title by inclusion, exclusion keywords, and smart accessory heuristics."""
+    title_lower = title.lower().strip()
+
+    # Smart accessory detection: titles starting with accessory nouns
+    accessory_starts = (
+        "crosse ", "canon ", "chargeur ", "boitier ", "boîtier ",
+        "châssis ", "chassis ", "culasse ", "kit ", "rail ",
+        "embase ", "embases ", "douilles ", "etuis ", "étuis ",
+        "ogives ", "amorces ", "silencieux ", "moderateur ", "modérateur "
+    )
+    if any(title_lower.startswith(prefix) for prefix in accessory_starts):
+        return False
+
+    # Specific phrases indicating an accessory sold separately
+    accessory_patterns = (
+        "crosse pour", "canon pour", "chargeur pour", "boitier pour", "boîtier pour",
+        "chassis pour", "châssis pour", "conversion pour", "rail pour", "embase pour",
+        "embases pour", "montage pour", "crosse seule", "canon seul", "boitier seul",
+        "boîtier seul", "chargeur seul", "culasse seule"
+    )
+    if any(pattern in title_lower for pattern in accessory_patterns):
+        return False
 
     # Check exclusions
     if keywords_exclude:
