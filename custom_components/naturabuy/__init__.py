@@ -14,6 +14,7 @@ from .const import (
     SERVICE_MUTE_ITEM,
     SERVICE_REFRESH,
     SERVICE_RESET_CACHE,
+    SERVICE_SET_BUDGET,
     SERVICE_UNMUTE_ITEM,
 )
 from .coordinator import NaturaBuyCoordinator
@@ -98,6 +99,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             DOMAIN,
             SERVICE_UNMUTE_ITEM,
             handle_unmute_item,
+        )
+
+    # Register set budget service if not already registered
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_BUDGET):
+        async def handle_set_budget(call: ServiceCall) -> None:
+            """Handle set budget service call."""
+            max_price = float(call.data.get("max_price", 600.0))
+            entry_id = call.data.get("entry_id")
+            _LOGGER.info("Set budget called with max_price=%.2f (entry_id=%s)", max_price, entry_id)
+            for eid, coord in hass.data.get(DOMAIN, {}).items():
+                if isinstance(coord, NaturaBuyCoordinator):
+                    if not entry_id or eid == entry_id:
+                        await coord.async_set_max_price(max_price)
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_BUDGET,
+            handle_set_budget,
         )
 
     # Register actionable notification listener

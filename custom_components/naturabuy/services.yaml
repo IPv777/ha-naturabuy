@@ -24,3 +24,24 @@ unmute_item:
       required: true
       selector:
         text:
+set_budget:
+  name: Modifier le plafond budgétaire
+  description: Modifie dynamiquement le prix maximum surveillé pour les recherches NaturaBuy.
+  fields:
+    max_price:
+      name: Prix maximum (€)
+      description: Plafond budgétaire en euros (ex 600, 750).
+      required: true
+      default: 600
+      selector:
+        number:
+          min: 1
+          max: 10000
+          step: 10
+          unit_of_measurement: €
+    entry_id:
+      name: Entrée spécifique (optionnel)
+      description: Identifiant de l'entrée à modifier. Si vide, s'applique à toutes les recherches.
+      required: false
+      selector:
+        text:

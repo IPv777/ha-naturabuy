@@ -52,6 +52,15 @@ class NaturaBuyItem:
     is_negotiable: bool
     is_newly_added: bool
     date_detected: datetime
+    has_optic: bool = False
+    optic_name: str | None = None
+    is_threaded: bool = False
+    has_silencer: bool = False
+    is_left_handed: bool = False
+    is_stainless: bool = False
+    stock_material: str = "inconnu"
+    urgency_level: str = "normal"
+    caliber: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert item to dictionary for sensor attributes and events."""
@@ -78,6 +87,15 @@ class NaturaBuyItem:
             "is_negotiable": self.is_negotiable,
             "is_newly_added": self.is_newly_added,
             "date_detected": self.date_detected.isoformat(),
+            "has_optic": self.has_optic,
+            "optic_name": self.optic_name,
+            "is_threaded": self.is_threaded,
+            "has_silencer": self.has_silencer,
+            "is_left_handed": self.is_left_handed,
+            "is_stainless": self.is_stainless,
+            "stock_material": self.stock_material,
+            "urgency_level": self.urgency_level,
+            "caliber": self.caliber,
         }
 
 
@@ -310,6 +328,80 @@ def parse_items_from_html(html: str, query_no_reserve: bool = False) -> list[Nat
         condition = card.get("data-dimension4")
         seller_type = card.get("data-dimension6")
 
+        # Hunting specific attribute extraction
+        title_lower = title.lower()
+
+        # Optics detection
+        optics_keywords = [
+            ("zeiss", "Zeiss"),
+            ("aimpoint", "Aimpoint"),
+            ("swarovski", "Swarovski"),
+            ("kahles", "Kahles"),
+            ("leupold", "Leupold"),
+            ("meopta", "Meopta"),
+            ("vortex", "Vortex"),
+            ("steiner", "Steiner"),
+            ("kite", "Kite"),
+            ("weaver", "Weaver"),
+            ("bushnell", "Bushnell"),
+            ("burris", "Burris"),
+            ("schmidt", "Schmidt & Bender"),
+            ("nikko", "Nikko"),
+            ("lunette", "Lunette"),
+            ("point rouge", "Point Rouge"),
+            ("optique", "Optique"),
+        ]
+        has_optic = False
+        optic_name = None
+        for kw, name in optics_keywords:
+            if kw in title_lower:
+                has_optic = True
+                optic_name = name
+                break
+
+        # Threaded barrel
+        threaded_keywords = ["fileté", "filetee", "filetage", "canon fileté", "5/8x24", "m14x1", "m15x1", "m14", "m15"]
+        is_threaded = any(kw in title_lower for kw in threaded_keywords)
+
+        # Silencer / sound moderator
+        silencer_keywords = ["silencieux", "modérateur", "moderateur", "frein de bouche", "a-tec", "freyr", "hausken", "hertz"]
+        has_silencer = any(kw in title_lower for kw in silencer_keywords)
+
+        # Left-handed
+        is_left_handed = "gaucher" in title_lower or "gauchère" in title_lower or "gauchere" in title_lower
+
+        # Stainless
+        is_stainless = "inox" in title_lower or "stainless" in title_lower
+
+        # Stock material
+        if any(kw in title_lower for kw in ["bois", "noyer", "wood"]):
+            stock_material = "bois"
+        elif any(kw in title_lower for kw in ["synthétique", "synthetique", "composite", "polymère", "polymere"]):
+            stock_material = "synthétique"
+        else:
+            stock_material = "inconnu"
+
+        # Caliber
+        if "30-06" in title_lower or "30.06" in title_lower or "30/06" in title_lower:
+            caliber = "30-06"
+        elif "308" in title_lower:
+            caliber = ".308 Win"
+        else:
+            caliber = None
+
+        # Urgency level
+        if is_auction and remaining_seconds is not None:
+            if remaining_seconds <= 3600:
+                urgency_level = "critical"
+            elif remaining_seconds <= 21600:
+                urgency_level = "warning"
+            elif remaining_seconds <= 86400:
+                urgency_level = "normal"
+            else:
+                urgency_level = "later"
+        else:
+            urgency_level = "buy_now"
+
         items.append(
             NaturaBuyItem(
                 id=str(item_id),
@@ -334,6 +426,15 @@ def parse_items_from_html(html: str, query_no_reserve: bool = False) -> list[Nat
                 is_negotiable=is_negotiable,
                 is_newly_added=is_newly_added,
                 date_detected=now,
+                has_optic=has_optic,
+                optic_name=optic_name,
+                is_threaded=is_threaded,
+                has_silencer=has_silencer,
+                is_left_handed=is_left_handed,
+                is_stainless=is_stainless,
+                stock_material=stock_material,
+                urgency_level=urgency_level,
+                caliber=caliber,
             )
         )
 
@@ -363,7 +464,9 @@ def matches_keywords(
         "crosse pour", "canon pour", "chargeur pour", "boitier pour", "boîtier pour",
         "chassis pour", "châssis pour", "conversion pour", "rail pour", "embase pour",
         "embases pour", "montage pour", "crosse seule", "canon seul", "boitier seul",
-        "boîtier seul", "chargeur seul", "culasse seule"
+        "boîtier seul", "chargeur seul", "culasse seule", "lunette seule", "optique seule",
+        "point rouge seul", "moderateur seul", "modérateur seul", "silencieux seul",
+        "chassis mdt", "châssis mdt"
     )
     if any(pattern in title_lower for pattern in accessory_patterns):
         return False

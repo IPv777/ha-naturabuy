@@ -311,6 +311,14 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
         _LOGGER.info("Item %s unmuted for %s", item_id, self.name)
         await self.async_request_refresh()
 
+    async def async_set_max_price(self, new_price: float) -> None:
+        """Dynamically update maximum price budget and trigger a refresh."""
+        new_options = dict(self.entry.options)
+        new_options[CONF_MAX_PRICE] = float(new_price)
+        self.hass.config_entries.async_update_entry(self.entry, options=new_options)
+        _LOGGER.info("Updated max budget to %.2f € for %s", new_price, self.name)
+        await self.async_request_refresh()
+
     async def _async_update_data(self) -> list[NaturaBuyItem]:
         """Fetch items across pages, manage turbo mode and process smart notifications."""
         try:
