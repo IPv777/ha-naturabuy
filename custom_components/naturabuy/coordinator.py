@@ -446,6 +446,8 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
                     else:
                         # Genuine auction where reserve was reached or seller had no reserve
                         it.has_no_reserve = True
+                        if buy_now is not None:
+                            it.buy_now_price = buy_now
                         if self.max_price <= 0 or it.price <= self.max_price:
                             filtered_items.append(it)
                 else:

@@ -108,6 +108,7 @@ class NaturaBuyItem:
             "price": self.price,
             "price_str": self.price_str,
             "is_auction": self.is_auction,
+            "buy_now_price": self.buy_now_price,
             "remaining_time": self.remaining_time_str,
             "remaining_seconds": self.remaining_seconds,
             "bids_count": self.bids_count,
