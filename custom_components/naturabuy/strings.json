@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Surveillance NaturaBuy",
-        "description": "Configurez les critères de recherche, les filtres avancés et les alertes pour NaturaBuy.",
+        "description": "Configurez les critères de recherche, les filtres avancés, le mode Turbo et les alertes.",
         "data": {
           "name": "Nom de la surveillance",
           "url": "URL NaturaBuy",
@@ -11,16 +11,18 @@
           "min_price": "Prix minimum (€)",
           "sale_type": "Type de vente",
           "no_reserve": "Enchères sans prix de réserve uniquement",
+          "brand": "Marque spécifique (optionnel, ex: Browning)",
           "condition": "État de l'objet",
           "seller_type": "Type de vendeur",
-          "keywords_exclude": "Mots-clés à exclure (ex: chargeur, crosse, rail)",
+          "keywords_exclude": "Mots-clés à exclure (ex: crosse seule, canon seul)",
           "keywords_include": "Mots-clés obligatoires (optionnel)",
           "max_pages": "Profondeur d'analyse (nombre de pages)",
+          "turbo_mode": "Mode Turbo Sprint (rafraîchissement accéléré à 2 min en fin d'enchère)",
           "notify_new": "Alerter lors d'une nouvelle annonce",
           "notify_ending": "Alerter avant la fin d'une enchère",
           "alert_minutes": "Délai d'alerte avant la fin (minutes)",
           "notify_targets": "Téléphones à notifier (ex: ThinkPhone)",
-          "scan_interval": "Intervalle de vérification (minutes)"
+          "scan_interval": "Intervalle de vérification normal (minutes)"
         }
       }
     },
@@ -39,16 +41,18 @@
           "min_price": "Prix minimum (€)",
           "sale_type": "Type de vente",
           "no_reserve": "Enchères sans prix de réserve uniquement",
+          "brand": "Marque spécifique (optionnel, ex: Browning)",
           "condition": "État de l'objet",
           "seller_type": "Type de vendeur",
-          "keywords_exclude": "Mots-clés à exclure (ex: chargeur, crosse, rail)",
+          "keywords_exclude": "Mots-clés à exclure (ex: crosse seule, canon seul)",
           "keywords_include": "Mots-clés obligatoires (optionnel)",
           "max_pages": "Profondeur d'analyse (nombre de pages)",
+          "turbo_mode": "Mode Turbo Sprint (rafraîchissement accéléré à 2 min en fin d'enchère)",
           "notify_new": "Alerter lors d'une nouvelle annonce",
           "notify_ending": "Alerter avant la fin d'une enchère",
           "alert_minutes": "Délai d'alerte avant la fin (minutes)",
           "notify_targets": "Téléphones à notifier (ex: ThinkPhone)",
-          "scan_interval": "Intervalle de vérification (minutes)"
+          "scan_interval": "Intervalle de vérification normal (minutes)"
         }
       }
     }

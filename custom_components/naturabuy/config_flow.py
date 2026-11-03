@@ -1,4 +1,4 @@
-"""Config flow for NaturaBuy integration with advanced filters."""
+"""Config flow for NaturaBuy integration with advanced filters, turbo mode and brand selection."""
 from __future__ import annotations
 
 import logging
@@ -16,6 +16,7 @@ from .const import (
     CONDITION_NEW,
     CONDITION_USED,
     CONF_ALERT_MINUTES,
+    CONF_BRAND,
     CONF_CONDITION,
     CONF_KEYWORDS_EXCLUDE,
     CONF_KEYWORDS_INCLUDE,
@@ -30,8 +31,10 @@ from .const import (
     CONF_SALE_TYPE,
     CONF_SCAN_INTERVAL,
     CONF_SELLER_TYPE,
+    CONF_TURBO_MODE,
     CONF_URL,
     DEFAULT_ALERT_MINUTES,
+    DEFAULT_BRAND,
     DEFAULT_CONDITION,
     DEFAULT_KEYWORDS_EXCLUDE,
     DEFAULT_KEYWORDS_INCLUDE,
@@ -45,6 +48,7 @@ from .const import (
     DEFAULT_SALE_TYPE,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SELLER_TYPE,
+    DEFAULT_TURBO_MODE,
     DOMAIN,
     SALE_TYPE_ALL,
     SALE_TYPE_AUCTION,
@@ -126,6 +130,7 @@ class NaturaBuyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     )
                 ),
                 vol.Required(CONF_NO_RESERVE, default=DEFAULT_NO_RESERVE): bool,
+                vol.Optional(CONF_BRAND, default=DEFAULT_BRAND): str,
                 vol.Required(
                     CONF_CONDITION,
                     default=DEFAULT_CONDITION,
@@ -157,6 +162,7 @@ class NaturaBuyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_MAX_PAGES, default=DEFAULT_MAX_PAGES): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=1, max=5, step=1, mode=selector.NumberSelectorMode.SLIDER)
                 ),
+                vol.Required(CONF_TURBO_MODE, default=DEFAULT_TURBO_MODE): bool,
                 vol.Required(CONF_NOTIFY_NEW, default=DEFAULT_NOTIFY_NEW): bool,
                 vol.Required(CONF_NOTIFY_ENDING, default=DEFAULT_NOTIFY_ENDING): bool,
                 vol.Required(CONF_ALERT_MINUTES, default=DEFAULT_ALERT_MINUTES): vol.Coerce(int),
@@ -239,6 +245,10 @@ class NaturaBuyOptionsFlowHandler(config_entries.OptionsFlow):
                     CONF_NO_RESERVE,
                     default=current.get(CONF_NO_RESERVE, DEFAULT_NO_RESERVE),
                 ): bool,
+                vol.Optional(
+                    CONF_BRAND,
+                    default=current.get(CONF_BRAND, DEFAULT_BRAND),
+                ): str,
                 vol.Required(
                     CONF_CONDITION,
                     default=current.get(CONF_CONDITION, DEFAULT_CONDITION),
@@ -279,6 +289,10 @@ class NaturaBuyOptionsFlowHandler(config_entries.OptionsFlow):
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=1, max=5, step=1, mode=selector.NumberSelectorMode.SLIDER)
                 ),
+                vol.Required(
+                    CONF_TURBO_MODE,
+                    default=current.get(CONF_TURBO_MODE, DEFAULT_TURBO_MODE),
+                ): bool,
                 vol.Required(
                     CONF_NOTIFY_NEW,
                     default=current.get(CONF_NOTIFY_NEW, DEFAULT_NOTIFY_NEW),

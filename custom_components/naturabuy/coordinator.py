@@ -1,4 +1,4 @@
-"""DataUpdateCoordinator for NaturaBuy integration with advanced filtering and rich notifications."""
+"""DataUpdateCoordinator for NaturaBuy with persistent cache, adaptive turbo mode, outbid tracking and ThinkPhone actions."""
 from __future__ import annotations
 
 import asyncio
@@ -9,10 +9,13 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
+    ACTION_REFRESH,
     CONF_ALERT_MINUTES,
+    CONF_BRAND,
     CONF_CONDITION,
     CONF_KEYWORDS_EXCLUDE,
     CONF_KEYWORDS_INCLUDE,
@@ -27,8 +30,10 @@ from .const import (
     CONF_SALE_TYPE,
     CONF_SCAN_INTERVAL,
     CONF_SELLER_TYPE,
+    CONF_TURBO_MODE,
     CONF_URL,
     DEFAULT_ALERT_MINUTES,
+    DEFAULT_BRAND,
     DEFAULT_CONDITION,
     DEFAULT_KEYWORDS_EXCLUDE,
     DEFAULT_KEYWORDS_INCLUDE,
@@ -41,9 +46,13 @@ from .const import (
     DEFAULT_SALE_TYPE,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SELLER_TYPE,
+    DEFAULT_TURBO_MODE,
     DOMAIN,
+    EVENT_AUCTION_BUDGET_EXCEEDED,
     EVENT_AUCTION_ENDING_SOON,
+    EVENT_AUCTION_OUTBID,
     EVENT_NEW_LISTING,
+    TURBO_SCAN_INTERVAL,
 )
 from .scraper import (
     NaturaBuyItem,
@@ -53,17 +62,18 @@ from .scraper import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+STORAGE_VERSION = 1
 
 
 class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
-    """Coordinator to fetch and monitor NaturaBuy data."""
+    """Coordinator to fetch and monitor NaturaBuy data with persistence and turbo mode."""
 
     config_entry: ConfigEntry
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize the coordinator."""
         self.entry = entry
-        scan_interval_minutes = entry.options.get(
+        self.normal_scan_interval = entry.options.get(
             CONF_SCAN_INTERVAL,
             entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
         )
@@ -71,12 +81,15 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
             hass,
             _LOGGER,
             name=f"NaturaBuy {entry.data.get(CONF_NAME, entry.title)}",
-            update_interval=timedelta(minutes=scan_interval_minutes),
+            update_interval=timedelta(minutes=self.normal_scan_interval),
         )
         self.session = async_get_clientsession(hass)
+        self.store = Store(hass, STORAGE_VERSION, f"naturabuy_{entry.entry_id}")
         self.seen_item_ids: set[str] = set()
         self.alerted_ending_ids: set[str] = set()
+        self.last_known_bids: dict[str, float] = {}
         self.initial_fetch_done = False
+        self.is_turbo_active = False
 
     @property
     def base_url(self) -> str:
@@ -138,6 +151,14 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
         )
 
     @property
+    def brand(self) -> str:
+        """Return brand filter."""
+        return self.entry.options.get(
+            CONF_BRAND,
+            self.entry.data.get(CONF_BRAND, DEFAULT_BRAND),
+        )
+
+    @property
     def keywords_exclude(self) -> str:
         """Return keywords to exclude."""
         return self.entry.options.get(
@@ -160,6 +181,16 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
             self.entry.options.get(
                 CONF_MAX_PAGES,
                 self.entry.data.get(CONF_MAX_PAGES, DEFAULT_MAX_PAGES),
+            )
+        )
+
+    @property
+    def turbo_mode(self) -> bool:
+        """Return whether turbo polling is enabled during end-of-auction sprint."""
+        return bool(
+            self.entry.options.get(
+                CONF_TURBO_MODE,
+                self.entry.data.get(CONF_TURBO_MODE, DEFAULT_TURBO_MODE),
             )
         )
 
@@ -194,15 +225,51 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
         """Return list of notify service names."""
         targets = self.entry.options.get(
             CONF_NOTIFY_TARGETS,
-            self.entry.data.get(CONF_NOTIFY_TARGETS, []),
+            self.entry.data.get(CONF_NOTIFY_TARGETS, ["notify.mobile_app_thinkphone_by_motorola"]),
         )
         if isinstance(targets, str):
             return [targets]
         return list(targets)
 
+    async def async_load_storage(self) -> None:
+        """Load persisted cache from disk."""
+        stored = await self.store.async_load()
+        if stored and isinstance(stored, dict):
+            self.seen_item_ids = set(stored.get("seen_ids", []))
+            self.alerted_ending_ids = set(stored.get("alerted_ending_ids", []))
+            self.last_known_bids = stored.get("last_known_bids", {})
+            self.initial_fetch_done = True
+            _LOGGER.debug(
+                "Restored NaturaBuy cache for %s (%d seen items)",
+                self.name,
+                len(self.seen_item_ids),
+            )
+
+    async def async_save_storage(self) -> None:
+        """Persist cache to disk."""
+        await self.store.async_save(
+            {
+                "seen_ids": list(self.seen_item_ids),
+                "alerted_ending_ids": list(self.alerted_ending_ids),
+                "last_known_bids": self.last_known_bids,
+            }
+        )
+
+    async def async_reset_cache(self) -> None:
+        """Reset seen cache to rediscover all items."""
+        self.seen_item_ids.clear()
+        self.alerted_ending_ids.clear()
+        self.last_known_bids.clear()
+        self.initial_fetch_done = False
+        await self.async_save_storage()
+        await self.async_request_refresh()
+
     async def _async_update_data(self) -> list[NaturaBuyItem]:
-        """Fetch items from NaturaBuy across pages and process notifications."""
+        """Fetch items across pages, manage turbo mode and process smart notifications."""
         try:
+            if not self.initial_fetch_done:
+                await self.async_load_storage()
+
             unique_items: dict[str, NaturaBuyItem] = {}
 
             # Scan pages for ending soon and newly listed
@@ -217,6 +284,7 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
                     no_reserve=self.no_reserve,
                     condition=self.condition,
                     seller_type=self.seller_type,
+                    brand=self.brand,
                     page=page,
                 )
                 items_ends = await async_fetch_naturabuy_page(self.session, ends_url)
@@ -236,6 +304,7 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
                     no_reserve=self.no_reserve,
                     condition=self.condition,
                     seller_type=self.seller_type,
+                    brand=self.brand,
                     page=page,
                 )
                 items_starts = await async_fetch_naturabuy_page(self.session, starts_url)
@@ -245,7 +314,7 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
 
                 await asyncio.sleep(0.3)
 
-            # Apply keyword filters
+            # Apply keyword exclusion/inclusion filters
             filtered_items: list[NaturaBuyItem] = []
             for item in unique_items.values():
                 if matches_keywords(
@@ -263,8 +332,30 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
                 )
             )
 
+            # Check for Adaptive Polling (Turbo Mode):
+            # If an auction is ending within 30 min and under max price, accelerate polling to 2 min
+            has_imminent_auction = any(
+                it.is_auction
+                and it.remaining_seconds is not None
+                and 0 < it.remaining_seconds <= 1800
+                and (self.max_price <= 0 or it.price <= self.max_price)
+                for it in filtered_items
+            )
+
+            if self.turbo_mode and has_imminent_auction and not self.is_turbo_active:
+                _LOGGER.info("Activating Turbo Polling Mode (2 min interval) for %s", self.name)
+                self.update_interval = timedelta(minutes=TURBO_SCAN_INTERVAL)
+                self.is_turbo_active = True
+            elif self.is_turbo_active and not has_imminent_auction:
+                _LOGGER.info("Restoring normal scan interval (%d min) for %s", self.normal_scan_interval, self.name)
+                self.update_interval = timedelta(minutes=self.normal_scan_interval)
+                self.is_turbo_active = False
+
             # Process notifications
             await self._process_notifications(filtered_items)
+
+            # Persist updated cache
+            await self.async_save_storage()
 
             return filtered_items
 
@@ -273,13 +364,36 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
             raise UpdateFailed(f"Error communicating with NaturaBuy: {err}") from err
 
     async def _process_notifications(self, items: list[NaturaBuyItem]) -> None:
-        """Check items for new listings and ending auctions."""
+        """Check items for new listings, ending auctions, and outbids."""
         alert_seconds = self.alert_minutes * 60
 
         for item in items:
-            # Filter check
+            # Price bounds check
             if self.max_price > 0 and item.price > self.max_price:
+                # If an auction previously tracked now exceeds max_price in the final hour
+                if (
+                    item.id in self.alerted_ending_ids
+                    and item.is_auction
+                    and item.remaining_seconds is not None
+                    and 0 < item.remaining_seconds <= alert_seconds
+                ):
+                    last_bid = self.last_known_bids.get(item.id, 0.0)
+                    if last_bid <= self.max_price:
+                        _LOGGER.info("NaturaBuy auction exceeded budget: %s (%s)", item.title, item.price_str)
+                        await self._send_notification(
+                            title=f"❌ [Budget dépassé] {item.title[:30]}",
+                            message=(
+                                f"L'enchère a grimpé à {item.price_str} et dépasse votre plafond de {self.max_price:.0f} €.\n"
+                                f"Fin dans : {item.remaining_time_str}"
+                            ),
+                            item=item,
+                            event_type=EVENT_AUCTION_BUDGET_EXCEEDED,
+                            tag=f"naturabuy_{item.id}",
+                            high_priority=False,
+                        )
+                        self.last_known_bids[item.id] = item.price
                 continue
+
             if self.min_price > 0 and item.price < self.min_price:
                 continue
 
@@ -288,45 +402,61 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
                 if item.id not in self.seen_item_ids:
                     _LOGGER.info("New NaturaBuy listing detected: %s (%s)", item.title, item.price_str)
                     badge = "🎯 Enchère" if item.is_auction else "⚡ Achat Immédiat"
-                    shipping_txt = " | 📦 Livraison gratuite" if item.free_shipping else ""
-                    reserve_txt = " (Sans prix de réserve)" if item.has_no_reserve else ""
+                    shipping_txt = " | 📦 Port gratuit" if item.free_shipping else ""
+                    reserve_txt = " (Sans réserve)" if item.has_no_reserve else ""
+                    reviews_txt = f" | ⭐ Vendeur ({item.seller_reviews} avis)" if item.seller_reviews else ""
+                    nego_txt = " | 💬 Prix négociable" if item.is_negotiable else ""
 
                     await self._send_notification(
-                        title=f"🆕 [NaturaBuy] {item.title[:38]}",
+                        title=f"🆕 [NaturaBuy] {item.title[:36]}",
                         message=(
                             f"Prix : {item.price_str} ({badge}{reserve_txt})\n"
-                            f"État : {item.condition or 'Occasion'} ({item.seller_type or 'Vendeur'}){shipping_txt}"
+                            f"État : {item.condition or 'Occasion'} ({item.seller_type or 'Vendeur'}){shipping_txt}{reviews_txt}{nego_txt}"
                         ),
                         item=item,
                         event_type=EVENT_NEW_LISTING,
-                        tag=f"naturabuy_new_{item.id}",
+                        tag=f"naturabuy_{item.id}",
                     )
 
-            # 2. Auction ending soon check
+            # 2. Auction ending soon check & outbid tracking
             if self.notify_ending and item.is_auction and item.remaining_seconds is not None:
                 if 0 < item.remaining_seconds <= alert_seconds:
-                    if item.id not in self.alerted_ending_ids:
-                        _LOGGER.info(
-                            "NaturaBuy auction ending soon: %s (in %s)",
-                            item.title,
-                            item.remaining_time_str,
-                        )
-                        bids_txt = f"{item.bids_count} offre(s)" if item.bids_count > 0 else "0 offre"
-                        reserve_txt = " (Sans réserve)" if item.has_no_reserve else ""
+                    bids_txt = f"{item.bids_count} offre(s)" if item.bids_count > 0 else "0 offre"
+                    reserve_txt = " (Sans réserve)" if item.has_no_reserve else ""
 
+                    if item.id not in self.alerted_ending_ids:
+                        _LOGGER.info("NaturaBuy auction ending soon: %s (in %s)", item.title, item.remaining_time_str)
                         await self._send_notification(
-                            title=f"⏳ [NaturaBuy < {self.alert_minutes}m] {item.title[:32]}",
+                            title=f"⏳ [Fin dans {item.remaining_time_str}] {item.title[:28]}",
                             message=(
-                                f"Enchère : {item.price_str} ({bids_txt}{reserve_txt})\n"
-                                f"Temps restant : {item.remaining_time_str}\n"
-                                f"Limite : sous votre budget de {self.max_price:.0f} €"
+                                f"Enchère en cours : {item.price_str} ({bids_txt}{reserve_txt})\n"
+                                f"Plafond : {self.max_price:.0f} € | Cliquez pour enchérir."
                             ),
                             item=item,
                             event_type=EVENT_AUCTION_ENDING_SOON,
-                            tag=f"naturabuy_ending_{item.id}",
+                            tag=f"naturabuy_{item.id}",
                             high_priority=True,
                         )
                         self.alerted_ending_ids.add(item.id)
+                        self.last_known_bids[item.id] = item.price
+
+                    elif item.id in self.last_known_bids:
+                        last_bid = self.last_known_bids[item.id]
+                        if item.price > last_bid:
+                            _LOGGER.info("NaturaBuy auction outbid update: %s -> %s", item.title, item.price_str)
+                            await self._send_notification(
+                                title=f"📈 [Surenchère !] {item.title[:30]}",
+                                message=(
+                                    f"Nouvelle offre : {item.price_str} (était {last_bid:.2f} €)\n"
+                                    f"Temps restant : {item.remaining_time_str} ({bids_txt})\n"
+                                    f"Reste sous votre budget ({self.max_price:.0f} €)."
+                                ),
+                                item=item,
+                                event_type=EVENT_AUCTION_OUTBID,
+                                tag=f"naturabuy_{item.id}",
+                                high_priority=True,
+                            )
+                            self.last_known_bids[item.id] = item.price
 
             # Mark as seen
             self.seen_item_ids.add(item.id)
@@ -342,7 +472,7 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
         tag: str | None = None,
         high_priority: bool = False,
     ) -> None:
-        """Send rich notification tailored for ThinkPhone / Android Companion app and fire event."""
+        """Send actionable notification tailored for ThinkPhone and fire event."""
         # 1. Fire Home Assistant Bus event
         event_payload = item.to_dict()
         event_payload["watch_name"] = self.name
@@ -362,9 +492,13 @@ class NaturaBuyCoordinator(DataUpdateCoordinator[list[NaturaBuyItem]]):
             "actions": [
                 {
                     "action": "URI",
-                    "title": "🎯 Voir sur NaturaBuy",
+                    "title": "🎯 Voir l'annonce",
                     "uri": item.url,
-                }
+                },
+                {
+                    "action": ACTION_REFRESH,
+                    "title": "🔄 Actualiser",
+                },
             ],
         }
 

@@ -80,14 +80,17 @@ class NaturaBuyTotalItemsSensor(NaturaBuyBaseSensor):
         """Return top items attributes and markdown summary."""
         items = self.coordinator.data or []
 
-        # Generate markdown table for Home Assistant Dashboard
-        md_lines = ["| Arme | Prix | Type | Fin |", "| :--- | :---: | :---: | :---: |"]
-        for it in items[:10]:
+        # Generate rich markdown table with ratings and badges
+        md_lines = ["| Arme | Prix | Type | Fin | Vendeur |", "| :--- | :---: | :---: | :---: | :---: |"]
+        for it in items[:12]:
             title_clean = it.title.replace("|", "-")
-            link = f"[{title_clean[:32]}]({it.url})"
+            link = f"[{title_clean[:28]}]({it.url})"
             type_badge = "Enchère" if it.is_auction else "Achat Immd."
+            if it.has_no_reserve and it.is_auction:
+                type_badge += " (Sans PR)"
             rem = it.remaining_time_str or "En vente"
-            md_lines.append(f"| {link} | **{it.price_str}** | {type_badge} | {rem} |")
+            seller_str = f"⭐ ({it.seller_reviews})" if it.seller_reviews else (it.seller_type or "N/A")
+            md_lines.append(f"| {link} | **{it.price_str}** | {type_badge} | {rem} | {seller_str} |")
 
         markdown_summary = "\n".join(md_lines)
 
@@ -96,6 +99,8 @@ class NaturaBuyTotalItemsSensor(NaturaBuyBaseSensor):
             "min_price": self.coordinator.min_price,
             "sale_type": self.coordinator.sale_type,
             "no_reserve": self.coordinator.no_reserve,
+            "brand": self.coordinator.brand,
+            "is_turbo_active": self.coordinator.is_turbo_active,
             "url": self.coordinator.base_url,
             "markdown_table": markdown_summary,
             "items_sample": [item.to_dict() for item in items[:8]],

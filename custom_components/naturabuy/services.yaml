@@ -1,3 +1,6 @@
 refresh:
   name: Actualiser NaturaBuy
   description: Force l'actualisation immédiate de toutes les recherches NaturaBuy configurées.
+reset_cache:
+  name: Réinitialiser le cache NaturaBuy
+  description: Réinitialise l'historique des annonces déjà vues pour redécouvrir tous les articles actuels.

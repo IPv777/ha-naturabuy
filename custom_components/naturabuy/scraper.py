@@ -1,4 +1,4 @@
-"""Scraper for NaturaBuy listings and auctions with enhanced filters and data extraction."""
+"""Scraper for NaturaBuy listings and auctions with enhanced filters, browser headers and seller analytics."""
 from __future__ import annotations
 
 import asyncio
@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup
 from .const import (
     CONDITION_NEW,
     CONDITION_USED,
-    DEFAULT_USER_AGENT,
+    DEFAULT_HEADERS,
     SALE_TYPE_ALL,
     SALE_TYPE_AUCTION,
     SALE_TYPE_BUY_NOW,
@@ -45,9 +45,11 @@ class NaturaBuyItem:
     brand: str | None
     condition: str | None
     seller_type: str | None
+    seller_reviews: int | None
     bids_count: int
     has_no_reserve: bool
     free_shipping: bool
+    is_negotiable: bool
     is_newly_added: bool
     date_detected: datetime
 
@@ -69,9 +71,11 @@ class NaturaBuyItem:
             "brand": self.brand,
             "condition": self.condition,
             "seller_type": self.seller_type,
+            "seller_reviews": self.seller_reviews,
             "bids_count": self.bids_count,
             "has_no_reserve": self.has_no_reserve,
             "free_shipping": self.free_shipping,
+            "is_negotiable": self.is_negotiable,
             "is_newly_added": self.is_newly_added,
             "date_detected": self.date_detected.isoformat(),
         }
@@ -134,6 +138,7 @@ def build_search_url(
     no_reserve: bool = False,
     condition: str = "all",
     seller_type: str = "all",
+    brand: str | None = None,
     page: int = 1,
 ) -> str:
     """Inject search/filter parameters into NaturaBuy URL."""
@@ -174,6 +179,10 @@ def build_search_url(
         query_params["ispro"] = ["part"]
     elif seller_type == SELLER_PRO:
         query_params["ispro"] = ["pro"]
+
+    # Brand filter if set
+    if brand and brand.strip():
+        query_params["brand"] = [brand.strip()]
 
     # Flatten single list values
     encoded_query = urlencode({k: v[0] for k, v in query_params.items()})
@@ -232,10 +241,19 @@ def parse_items_from_html(html: str) -> list[NaturaBuyItem]:
         if bids_match:
             bids_count = int(bids_match.group(1))
 
-        # Check for free shipping or no reserve mentions
+        # Check for free shipping, reserve mentions, or negotiable offers
         all_card_text = card.get_text(" ", strip=True).lower()
         free_shipping = "livraison gratuite" in all_card_text or "port gratuit" in all_card_text
         has_no_reserve = "sans reserve" in all_card_text or "sans réserve" in all_card_text or "sans prix de reserve" in all_card_text or "sans prix de réserve" in all_card_text
+        is_negotiable = "offre" in all_card_text or "négociable" in all_card_text
+
+        # Seller reviews count
+        seller_reviews: int | None = None
+        rev_elem = card.select_one(".itemCard-reviews")
+        if rev_elem:
+            rev_match = re.search(r"\((\d+)\)", rev_elem.get_text(strip=True))
+            if rev_match:
+                seller_reviews = int(rev_match.group(1))
 
         # Prices: find bold elements containing euro symbol
         bold_prices: list[float] = []
@@ -293,9 +311,11 @@ def parse_items_from_html(html: str) -> list[NaturaBuyItem]:
                 brand=brand,
                 condition=condition,
                 seller_type=seller_type,
+                seller_reviews=seller_reviews,
                 bids_count=bids_count,
                 has_no_reserve=has_no_reserve,
                 free_shipping=free_shipping,
+                is_negotiable=is_negotiable,
                 is_newly_added=is_newly_added,
                 date_detected=now,
             )
@@ -332,10 +352,9 @@ async def async_fetch_naturabuy_page(
     session: aiohttp.ClientSession,
     url: str,
 ) -> list[NaturaBuyItem]:
-    """Fetch and parse items from a NaturaBuy URL with resilient encoding handling."""
-    headers = {"User-Agent": DEFAULT_USER_AGENT}
+    """Fetch and parse items from a NaturaBuy URL with resilient encoding handling and browser headers."""
     try:
-        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+        async with session.get(url, headers=DEFAULT_HEADERS, timeout=aiohttp.ClientTimeout(total=15)) as resp:
             if resp.status != 200:
                 _LOGGER.error("Failed to fetch NaturaBuy page %s, status code: %s", url, resp.status)
                 return []
