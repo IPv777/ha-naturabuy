@@ -10,6 +10,7 @@ from homeassistant.core import Event, HomeAssistant, ServiceCall
 from .const import (
     ACTION_MUTE,
     ACTION_REFRESH,
+    CONF_MAX_PRICE,
     DOMAIN,
     SERVICE_MUTE_ITEM,
     SERVICE_REFRESH,
@@ -42,9 +43,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async def handle_refresh(call: ServiceCall) -> None:
             """Handle manual refresh service call."""
             _LOGGER.debug("Manual refresh requested for NaturaBuy")
-            for coord in hass.data.get(DOMAIN, {}).values():
-                if isinstance(coord, NaturaBuyCoordinator):
-                    await coord.async_request_refresh()
+            coordinators = [
+                coord for coord in list(hass.data.get(DOMAIN, {}).values())
+                if isinstance(coord, NaturaBuyCoordinator)
+            ]
+            for coord in coordinators:
+                await coord.async_request_refresh()
 
         hass.services.async_register(
             DOMAIN,
@@ -57,9 +61,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async def handle_reset_cache(call: ServiceCall) -> None:
             """Handle reset cache service call."""
             _LOGGER.info("Reset cache requested for NaturaBuy")
-            for coord in hass.data.get(DOMAIN, {}).values():
-                if isinstance(coord, NaturaBuyCoordinator):
-                    await coord.async_reset_cache()
+            coordinators = [
+                coord for coord in list(hass.data.get(DOMAIN, {}).values())
+                if isinstance(coord, NaturaBuyCoordinator)
+            ]
+            for coord in coordinators:
+                await coord.async_reset_cache()
 
         hass.services.async_register(
             DOMAIN,
@@ -74,9 +81,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             item_id = str(call.data.get("item_id", "")).strip()
             if item_id:
                 _LOGGER.info("Mute item service called for %s", item_id)
-                for coord in hass.data.get(DOMAIN, {}).values():
-                    if isinstance(coord, NaturaBuyCoordinator):
-                        await coord.async_mute_item(item_id)
+                coordinators = [
+                    coord for coord in list(hass.data.get(DOMAIN, {}).values())
+                    if isinstance(coord, NaturaBuyCoordinator)
+                ]
+                for coord in coordinators:
+                    await coord.async_mute_item(item_id)
 
         hass.services.async_register(
             DOMAIN,
@@ -91,9 +101,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             item_id = str(call.data.get("item_id", "")).strip()
             if item_id:
                 _LOGGER.info("Unmute item service called for %s", item_id)
-                for coord in hass.data.get(DOMAIN, {}).values():
-                    if isinstance(coord, NaturaBuyCoordinator):
-                        await coord.async_unmute_item(item_id)
+                coordinators = [
+                    coord for coord in list(hass.data.get(DOMAIN, {}).values())
+                    if isinstance(coord, NaturaBuyCoordinator)
+                ]
+                for coord in coordinators:
+                    await coord.async_unmute_item(item_id)
 
         hass.services.async_register(
             DOMAIN,
@@ -104,14 +117,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register set budget service if not already registered
     if not hass.services.has_service(DOMAIN, SERVICE_SET_BUDGET):
         async def handle_set_budget(call: ServiceCall) -> None:
-            """Handle set budget service call."""
+            """Handle set budget service call safely across config entries."""
             max_price = float(call.data.get("max_price", 600.0))
             entry_id = call.data.get("entry_id")
             _LOGGER.info("Set budget called with max_price=%.2f (entry_id=%s)", max_price, entry_id)
-            for eid, coord in hass.data.get(DOMAIN, {}).items():
-                if isinstance(coord, NaturaBuyCoordinator):
-                    if not entry_id or eid == entry_id:
-                        await coord.async_set_max_price(max_price)
+
+            entries_to_update: list[ConfigEntry] = []
+            if entry_id:
+                entry_obj = hass.config_entries.async_get_entry(entry_id)
+                if entry_obj and entry_obj.domain == DOMAIN:
+                    entries_to_update.append(entry_obj)
+            else:
+                entries_to_update = list(hass.config_entries.async_entries(DOMAIN))
+
+            for ent in entries_to_update:
+                new_options = dict(ent.options)
+                new_options[CONF_MAX_PRICE] = float(max_price)
+                hass.config_entries.async_update_entry(ent, options=new_options)
 
         hass.services.async_register(
             DOMAIN,
@@ -126,17 +148,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             action = event.data.get("action")
             if action == ACTION_REFRESH:
                 _LOGGER.info("Received ThinkPhone action: NATURABUY_REFRESH")
-                for coord in hass.data.get(DOMAIN, {}).values():
-                    if isinstance(coord, NaturaBuyCoordinator):
-                        await coord.async_request_refresh()
+                coordinators = [
+                    coord for coord in list(hass.data.get(DOMAIN, {}).values())
+                    if isinstance(coord, NaturaBuyCoordinator)
+                ]
+                for coord in coordinators:
+                    await coord.async_request_refresh()
             elif action == ACTION_MUTE:
                 tag = str(event.data.get("tag", ""))
                 item_id = tag.replace("naturabuy_", "") if "naturabuy_" in tag else event.data.get("item_id")
                 if item_id:
                     _LOGGER.info("Received ThinkPhone action: NATURABUY_MUTE for item %s", item_id)
-                    for coord in hass.data.get(DOMAIN, {}).values():
-                        if isinstance(coord, NaturaBuyCoordinator):
-                            await coord.async_mute_item(str(item_id))
+                    coordinators = [
+                        coord for coord in list(hass.data.get(DOMAIN, {}).values())
+                        if isinstance(coord, NaturaBuyCoordinator)
+                    ]
+                    for coord in coordinators:
+                        await coord.async_mute_item(str(item_id))
 
         hass.data[DOMAIN][f"{DOMAIN}_action_listener"] = hass.bus.async_listen(
             "mobile_app_notification_action",
@@ -149,7 +177,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
+        hass.data[DOMAIN].pop(entry.entry_id, None)
 
     return unload_ok
 

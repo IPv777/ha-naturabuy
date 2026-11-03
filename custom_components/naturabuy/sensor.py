@@ -187,32 +187,6 @@ class NaturaBuyTotalItemsSensor(NaturaBuyBaseSensor):
         """Return top items attributes, full items array, and visual card grid."""
         items = self.coordinator.data or []
 
-        # Markdown table fallback
-        md_lines = [
-            "| Photo | Arme | Prix | Type | Fin | Vendeur |",
-            "| :---: | :--- | :---: | :---: | :---: | :---: |",
-        ]
-        for it in items[:15]:
-            title_clean = it.title.replace("|", "-")
-            link = f"[{title_clean[:32]}]({it.url})"
-            img_html = (
-                f"<img src='{it.image_url}' width='42' height='30' style='object-fit:cover; border-radius:4px; vertical-align:middle;'>"
-                if it.image_url
-                else "🎯"
-            )
-            type_badge = "Enchère" if it.is_auction else "Achat Immd."
-            if it.has_no_reserve and it.is_auction:
-                type_badge += " (Sans PR)"
-            if it.free_shipping:
-                type_badge += " 📦"
-            if it.is_negotiable:
-                type_badge += " 💬"
-            rem = it.remaining_time_str or "En vente"
-            seller_str = f"⭐ ({it.seller_reviews})" if it.seller_reviews else (it.seller_type or "N/A")
-            md_lines.append(f"| {img_html} | {link} | **{it.price_str}** | {type_badge} | {rem} | {seller_str} |")
-
-        markdown_summary = "\n".join(md_lines)
-
         # Equipped items subset
         equipped = [it for it in items if it.has_optic or it.is_threaded or it.has_silencer]
 
@@ -229,11 +203,7 @@ class NaturaBuyTotalItemsSensor(NaturaBuyBaseSensor):
             "muted_items_count": len(self.coordinator.muted_item_ids),
             "is_turbo_active": self.coordinator.is_turbo_active,
             "url": self.coordinator.base_url,
-            "cards_html": build_cards_grid_html(items),
-            "equipped_cards_html": build_cards_grid_html(equipped, empty_message="Aucun pack équipé d'optique ou silencieux sous 600 €"),
-            "markdown_table": markdown_summary,
-            "items": [item.to_dict() for item in items[:30]],
-            "items_sample": [item.to_dict() for item in items[:8]],
+            "items": [item.to_dict() for item in items[:25]],
             "cheapest_item": cheapest_dict,
             "equipped_count": len(equipped),
         }
