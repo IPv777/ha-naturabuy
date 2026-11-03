@@ -191,7 +191,7 @@ class NaturaBuyTotalItemsSensor(NaturaBuyBaseSensor):
         equipped = [it for it in items if it.has_optic or it.is_threaded or it.has_silencer]
 
         # Cheapest item
-        cheapest_dict = min(items, key=lambda x: x.price).to_dict() if items else {}
+        cheapest_dict = min(items, key=lambda x: x.price).to_display_dict() if items else {}
 
         return {
             "max_price": self.coordinator.max_price,
@@ -203,7 +203,7 @@ class NaturaBuyTotalItemsSensor(NaturaBuyBaseSensor):
             "muted_items_count": len(self.coordinator.muted_item_ids),
             "is_turbo_active": self.coordinator.is_turbo_active,
             "url": self.coordinator.base_url,
-            "items": [item.to_dict() for item in items[:25]],
+            "items": [item.to_display_dict() for item in items[:18]],
             "cheapest_item": cheapest_dict,
             "equipped_count": len(equipped),
         }
@@ -232,7 +232,7 @@ class NaturaBuyActiveAuctionsSensor(NaturaBuyBaseSensor):
         return {
             "auctions_count": len(auctions),
             "no_reserve_count": sum(1 for a in auctions if a.has_no_reserve),
-            "auctions": [a.to_dict() for a in auctions[:10]],
+            "auctions": [a.to_display_dict() for a in auctions[:10]],
         }
 
 
@@ -340,8 +340,8 @@ class NaturaBuyEquippedItemsSensor(NaturaBuyBaseSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return sample of equipped rifles."""
         items = self.coordinator.data or []
-        equipped = [it.to_dict() for it in items if it.has_optic or it.is_threaded or it.has_silencer]
+        equipped = [it.to_display_dict() for it in items if it.has_optic or it.is_threaded or it.has_silencer]
         return {
             "equipped_count": len(equipped),
-            "equipped_items": equipped[:10],
+            "equipped_items": equipped[:12],
         }

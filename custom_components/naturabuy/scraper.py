@@ -98,6 +98,30 @@ class NaturaBuyItem:
             "caliber": self.caliber,
         }
 
+    def to_display_dict(self) -> dict[str, Any]:
+        """Compact dictionary optimized for Lovelace flex-table-card and under 16KB limit."""
+        return {
+            "id": self.id,
+            "title": self.title,
+            "url": self.url,
+            "image_url": self.image_url,
+            "price": self.price,
+            "price_str": self.price_str,
+            "is_auction": self.is_auction,
+            "remaining_time": self.remaining_time_str,
+            "remaining_seconds": self.remaining_seconds,
+            "bids_count": self.bids_count,
+            "brand": self.brand,
+            "condition": self.condition,
+            "seller_type": self.seller_type,
+            "has_optic": self.has_optic,
+            "optic_name": self.optic_name,
+            "is_threaded": self.is_threaded,
+            "has_silencer": self.has_silencer,
+            "is_stainless": self.is_stainless,
+            "is_left_handed": self.is_left_handed,
+        }
+
 
 def clean_price(text: str | None) -> float | None:
     """Clean and parse a price string to float."""
